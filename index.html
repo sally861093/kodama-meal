@@ -1,0 +1,229 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <meta name="theme-color" content="#0a84ff" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="apple-mobile-web-app-title" content="食事表OCR" />
+  <link rel="manifest" href="manifest.webmanifest" />
+  <title>食事表 読み取り</title>
+  <style>
+    :root{font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Yu Gothic",sans-serif;color:#152033;background:#f4f7fb}
+    *{box-sizing:border-box} body{margin:0;background:#f4f7fb}
+    .app{max-width:760px;margin:0 auto;padding:calc(14px + env(safe-area-inset-top)) 14px calc(30px + env(safe-area-inset-bottom))}
+    h1{font-size:24px;margin:8px 0 4px}.sub{color:#607086;font-size:14px;margin-bottom:14px}
+    .card{background:#fff;border-radius:18px;padding:16px;margin:12px 0;box-shadow:0 4px 18px rgba(25,50,90,.08)}
+    .badge{display:inline-block;font-size:12px;padding:5px 9px;border-radius:999px;background:#e9f5ee;color:#137a3d;font-weight:700}
+    .warnbadge{background:#fff4d6;color:#8c6200}.privacy{display:flex;gap:10px;align-items:flex-start;background:#eaf7ef;border:1px solid #b8e2c6;border-radius:14px;padding:12px;margin:10px 0}
+    button,.btn{width:100%;border:0;border-radius:14px;padding:14px;font-weight:700;font-size:17px;margin:7px 0;display:block;text-align:center;cursor:pointer}
+    .primary{background:#0a84ff;color:#fff}.secondary{background:#eaf3ff;color:#096bc2}.green{background:#11a861;color:#fff}.ghost{background:#f0f2f5;color:#243247}
+    input[type=file]{display:none} textarea,input,select{width:100%;font-size:16px;border:1px solid #d8e0e8;border-radius:12px;padding:11px;background:#fff}
+    textarea{min-height:130px;resize:vertical}label{font-weight:700;display:block;margin:10px 0 6px}
+    .row{display:grid;grid-template-columns:1fr 1fr;gap:9px}.small{font-size:13px;color:#6a7788}.hidden{display:none!important}
+    .progress{height:12px;background:#e7edf4;border-radius:999px;overflow:hidden}.bar{height:100%;width:0;background:#11a861;transition:width .2s}
+    .status{font-weight:700;margin:10px 0}.steps{list-style:none;padding:0;margin:10px 0}.steps li{padding:8px 0;color:#758195}.steps li.done{color:#147a43}.steps li.active{color:#0a6ecb;font-weight:700}
+    canvas{max-width:100%;border-radius:12px;border:1px solid #e0e4ea}.previewWrap{max-height:400px;overflow:auto;background:#eef2f6;border-radius:12px;padding:8px}
+    .record{border:1px solid #e0e6ed;border-radius:14px;padding:12px;margin:10px 0}.record.low{border-color:#f4b942;background:#fffaf0}.record.off{opacity:.55}.recordHead{display:flex;justify-content:space-between;gap:10px;align-items:center}.recordHead strong{font-size:18px}
+    .grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px}.full{grid-column:1/-1}.conf{font-size:12px;padding:4px 7px;border-radius:999px;background:#e9f5ee;color:#137a3d}.conf.low{background:#fff0cc;color:#8a5b00}
+    table{width:100%;border-collapse:collapse}th,td{padding:9px;border-bottom:1px solid #e7ebef;text-align:left}th{font-size:13px;color:#5d6978}.summaryGrid{display:grid;grid-template-columns:1fr 1fr;gap:10px}.summaryBox{background:#f7f9fc;border-radius:12px;padding:10px}
+    .mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;white-space:pre-wrap;font-size:12px;background:#f5f7fa;padding:10px;border-radius:10px;max-height:180px;overflow:auto}
+    .footer{font-size:12px;color:#718094;text-align:center;margin-top:18px}.danger{color:#b42318;font-weight:700}
+  </style>
+</head>
+<body>
+<div class="app">
+  <h1>食事表 読み取り</h1>
+  <div class="sub">iPhoneで写真を選択 → 端末内OCR → 確認 → 集計</div>
+
+  <section id="home" class="card">
+    <span class="badge">個人情報保護 ON</span>
+    <div class="privacy"><span>🔒</span><div><b>写真は外部へ送信しません。</b><div class="small">OCRはiPhoneのSafari内で実行します。初回のみOCRプログラム・日本語辞書を読み込みます。</div></div></div>
+
+    <label class="btn primary" for="mealPhoto">🖼 食事表を写真ライブラリから選ぶ</label>
+    <input id="mealPhoto" type="file" accept="image/*" />
+    <label class="btn secondary" for="menuPhoto">📄 献立表を選ぶ（任意）</label>
+    <input id="menuPhoto" type="file" accept="image/*" />
+    <div id="picked" class="small">食事表：未選択</div>
+
+    <button id="startBtn" class="green" disabled>読み取りを開始する</button>
+    <button id="namesBtn" class="ghost">利用者名簿を設定</button>
+  </section>
+
+  <section id="namesCard" class="card hidden">
+    <h2>利用者名簿</h2>
+    <div class="small">1行に1名。氏名はこのiPhoneのブラウザ内だけに保存します。例：福田、田中、山田</div>
+    <textarea id="names"></textarea>
+    <div class="row"><button id="saveNames" class="primary">保存</button><button id="cancelNames" class="ghost">戻る</button></div>
+  </section>
+
+  <section id="progressCard" class="card hidden">
+    <h2>読み取り中…</h2>
+    <div class="progress"><div id="bar" class="bar"></div></div>
+    <div id="status" class="status">準備しています</div>
+    <ul class="steps">
+      <li id="s1">○ 写真を補正</li><li id="s2">○ OCRモデルを準備</li><li id="s3">○ 日本語を文字認識</li><li id="s4">○ 氏名・食事項目を照合</li><li id="s5">○ 要確認項目を作成</li>
+    </ul>
+    <div class="small">初回は日本語OCRデータを取得するため時間がかかります。2回目以降はブラウザにキャッシュされます。</div>
+  </section>
+
+  <section id="previewCard" class="card hidden">
+    <h2>読み取り画像</h2><div class="previewWrap"><canvas id="canvas"></canvas></div>
+  </section>
+
+  <section id="reviewCard" class="card hidden">
+    <h2>読み取り確認</h2>
+    <div id="reviewMsg" class="small"></div>
+    <div id="records"></div>
+    <button id="summaryBtn" class="primary">この内容で集計する</button>
+    <button id="retryBtn" class="ghost">別の写真でやり直す</button>
+  </section>
+
+  <section id="summaryCard" class="card hidden">
+    <h2>集計結果</h2>
+    <div id="summary"></div>
+    <button id="csvBtn" class="green">CSVを保存（Excel用）</button>
+    <button id="backReview" class="ghost">確認画面へ戻る</button>
+  </section>
+
+  <section id="debugCard" class="card hidden">
+    <h3>OCR原文</h3><div id="rawText" class="mono"></div>
+  </section>
+  <div class="footer">Kodama Meal OCR PWA v1.0 — API送信なし</div>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@6/dist/tesseract.min.js"></script>
+<script>
+const $ = s => document.querySelector(s);
+const mealPhoto=$('#mealPhoto'), menuPhoto=$('#menuPhoto'), startBtn=$('#startBtn');
+let mealFile=null, menuFile=null, records=[], rawOCR='', menuOCR='';
+const MEALS=['普通','粗刻み','刻み','極刻み','ミキサー','ソフト'];
+const RICE=['大','中','小','粥','軟飯','粥ミキサー'];
+const OTHER=['減塩','アレルギー'];
+
+function show(id,on=true){$(id).classList.toggle('hidden',!on)}
+function setStep(n,state){for(let i=1;i<=5;i++){const e=$('#s'+i);e.className=i<n?'done':i===n?(state||'active'):'';e.textContent=(i<n?'✓ ':i===n?'▶ ':'○ ')+e.textContent.replace(/^[✓▶○]\s*/,'')}}
+function setProgress(p,text){$('#bar').style.width=p+'%';$('#status').textContent=text}
+function normalize(s){return (s||'').replace(/[\s　・･|｜]/g,'').replace(/[ー―‐]/g,'ー')}
+function levenshtein(a,b){a=normalize(a);b=normalize(b);const m=Array.from({length:a.length+1},()=>Array(b.length+1).fill(0));for(let i=0;i<=a.length;i++)m[i][0]=i;for(let j=0;j<=b.length;j++)m[0][j]=j;for(let i=1;i<=a.length;i++)for(let j=1;j<=b.length;j++)m[i][j]=Math.min(m[i-1][j]+1,m[i][j-1]+1,m[i-1][j-1]+(a[i-1]===b[j-1]?0:1));return m[a.length][b.length]}
+function nameList(){return (localStorage.getItem('kodama_names')||'').split(/\n+/).map(x=>x.trim()).filter(Boolean)}
+function bestName(line){const names=nameList();if(!names.length)return null;const parts=line.split(/[\s　,，:：;；]+/).filter(Boolean);let best=null;for(const n of names){for(const p of parts){if(p.includes(n)||n.includes(p)){const d=levenshtein(n,p);const score=1-d/Math.max(n.length,p.length,1);if(!best||score>best.score)best={name:n,score}} else if(p.length>=2){const d=levenshtein(n,p);const score=1-d/Math.max(n.length,p.length,1);if(score>=0.5&&(!best||score>best.score))best={name:n,score}}}}return best&&best.score>=0.5?best:null}
+function firstHit(s,list){const n=normalize(s);return list.find(x=>n.includes(normalize(x)))||''}
+function detectMeal(line){return firstHit(line,['極刻み','粗刻み','ミキサー','ソフト','刻み','普通'])}
+function detectRice(line){return firstHit(line,['粥ミキサー','軟飯','粥','大','中','小'])}
+function detectSalt(line){return /減塩/.test(line)?'あり':'なし'}
+function detectAllergy(line){return /アレルギー|禁食|除去/.test(line)?'あり':'なし'}
+function esc(s){return String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
+
+mealPhoto.addEventListener('change',()=>{mealFile=mealPhoto.files[0]||null;$('#picked').textContent='食事表：'+(mealFile?mealFile.name:'未選択')+(menuFile?' ／ 献立表：'+menuFile.name:'');startBtn.disabled=!mealFile});
+menuPhoto.addEventListener('change',()=>{menuFile=menuPhoto.files[0]||null;$('#picked').textContent='食事表：'+(mealFile?mealFile.name:'未選択')+(menuFile?' ／ 献立表：'+menuFile.name:'')});
+$('#namesBtn').onclick=()=>{$('#names').value=localStorage.getItem('kodama_names')||'';show('#home',false);show('#namesCard',true)};
+$('#cancelNames').onclick=()=>{show('#namesCard',false);show('#home',true)};
+$('#saveNames').onclick=()=>{localStorage.setItem('kodama_names',$('#names').value.trim());show('#namesCard',false);show('#home',true);alert('利用者名簿をこのiPhoneに保存しました。')};
+
+async function fileToCanvas(file){
+  const img=await new Promise((res,rej)=>{const i=new Image();i.onload=()=>res(i);i.onerror=rej;i.src=URL.createObjectURL(file)});
+  const maxW=2600, scale=Math.min(2.0,maxW/img.width); // upscale small photos, cap large
+  const w=Math.round(img.width*scale), h=Math.round(img.height*scale);
+  const c=$('#canvas');c.width=w;c.height=h;const ctx=c.getContext('2d',{willReadFrequently:true});ctx.drawImage(img,0,0,w,h);
+  const im=ctx.getImageData(0,0,w,h),d=im.data;
+  // grayscale + contrast. Preserve enough color to detect highlighter using original canvas data is omitted in v1.
+  for(let p=0;p<d.length;p+=4){let g=.299*d[p]+.587*d[p+1]+.114*d[p+2];g=(g-128)*1.35+128;g=Math.max(0,Math.min(255,g));d[p]=d[p+1]=d[p+2]=g}
+  ctx.putImageData(im,0,0);return c;
+}
+
+function parseTSV(tsv){
+  if(!tsv)return [];
+  const rows=tsv.trim().split(/\n/).slice(1).map(r=>r.split('\t'));
+  const lines=new Map();
+  for(const a of rows){if(a.length<12||Number(a[0])!==5)continue;const conf=Number(a[10]);const text=a.slice(11).join('\t').trim();if(!text)continue;const key=[a[1],a[2],a[3],a[4]].join('-');if(!lines.has(key))lines.set(key,{parts:[],confs:[]});lines.get(key).parts.push(text);if(conf>=0)lines.get(key).confs.push(conf)}
+  return [...lines.values()].map(x=>({text:x.parts.join(' '),conf:x.confs.length?x.confs.reduce((a,b)=>a+b,0)/x.confs.length:0}));
+}
+
+function linesToRecords(lines){
+  const out=[];const used=new Set();
+  for(let i=0;i<lines.length;i++){
+    const cur=lines[i];let cand=bestName(cur.text);let combined=cur.text;
+    if(!cand){ // sometimes name is split to adjacent OCR line
+      const around=[i-1,i+1].filter(j=>j>=0&&j<lines.length);
+      for(const j of around){const c=bestName(lines[j].text);if(c&&(!cand||c.score>cand.score)){cand=c;combined=lines[j].text+' '+cur.text}}
+    }
+    if(!cand||used.has(cand.name))continue;
+    // combine immediate next line to catch wrapped cells, but never create a person without a recognized name
+    const ext=[combined, lines[i+1]?.text||''].join(' ');
+    const conf=Math.min(100,Math.round((cur.conf||0)*0.65+cand.score*100*0.35));
+    out.push({name:cand.name,meal:detectMeal(ext),rice:detectRice(ext),salt:detectSalt(ext),allergy:detectAllergy(ext),active:true,leave:false,conf,raw:ext});
+    used.add(cand.name);
+  }
+  return out;
+}
+
+function renderRecords(){
+  const box=$('#records');box.innerHTML='';
+  if(!records.length){box.innerHTML='<div class="danger">氏名を確定できませんでした。利用者名簿を登録してから、写真を正面・明るい場所で撮り直してください。</div>';return}
+  const low=records.filter(r=>r.conf<75||!r.meal||!r.rice).length;
+  $('#reviewMsg').innerHTML=`${records.length}名を検出。${low?`<b>${low}件は要確認です。</b>`:'大きな不確実項目はありません。'} 氏名のないOCR行は人数に数えていません。`;
+  records.forEach((r,idx)=>{
+    const d=document.createElement('div');d.className='record '+((r.conf<75||!r.meal||!r.rice)?'low ':'')+(!r.active?'off':'');
+    d.innerHTML=`<div class="recordHead"><strong>${esc(r.name)}</strong><span class="conf ${r.conf<75?'low':''}">${r.conf<75?'要確認 ':''}${r.conf}%</span></div>
+    <div class="grid">
+      <div><label>食事形態</label><select data-i="${idx}" data-k="meal"><option value="">未判定</option>${MEALS.map(x=>`<option ${r.meal===x?'selected':''}>${x}</option>`).join('')}</select></div>
+      <div><label>米飯</label><select data-i="${idx}" data-k="rice"><option value="">未判定</option>${RICE.map(x=>`<option ${r.rice===x?'selected':''}>${x}</option>`).join('')}</select></div>
+      <div><label>減塩</label><select data-i="${idx}" data-k="salt"><option ${r.salt==='なし'?'selected':''}>なし</option><option ${r.salt==='あり'?'selected':''}>あり</option></select></div>
+      <div><label>アレルギー</label><select data-i="${idx}" data-k="allergy"><option ${r.allergy==='なし'?'selected':''}>なし</option><option ${r.allergy==='あり'?'selected':''}>あり</option></select></div>
+      <div class="full"><label><input type="checkbox" data-i="${idx}" data-k="active" ${r.active?'checked':''} style="width:auto"> 集計に含める</label> <span class="small">休みならOFF</span></div>
+      <div class="full small">OCR: ${esc(r.raw)}</div>
+    </div>`;box.appendChild(d)
+  });
+  box.querySelectorAll('select,input[type=checkbox]').forEach(el=>el.addEventListener('change',e=>{const i=+e.target.dataset.i,k=e.target.dataset.k;records[i][k]=k==='active'?e.target.checked:e.target.value;renderRecords()}));
+}
+
+async function runOCR(canvas){
+  const worker=await Tesseract.createWorker('jpn+eng',1,{logger:m=>{
+    if(m.status==='loading tesseract core')setProgress(25,'OCRエンジンを読み込み中');
+    if(m.status==='loading language traineddata')setProgress(32,'日本語辞書を読み込み中');
+    if(m.status==='initializing api')setProgress(40,'OCRを初期化中');
+    if(m.status==='recognizing text')setProgress(45+Math.round((m.progress||0)*40),`文字認識中 ${Math.round((m.progress||0)*100)}%`);
+  }});
+  await worker.setParameters({preserve_interword_spaces:'1',user_defined_dpi:'300'});
+  const res=await worker.recognize(canvas,{}, {tsv:true});
+  await worker.terminate();return res.data;
+}
+
+async function ocrMenu(file){
+  if(!file)return '';
+  const tmp=document.createElement('canvas');const img=await new Promise((res,rej)=>{const i=new Image();i.onload=()=>res(i);i.onerror=rej;i.src=URL.createObjectURL(file)});const scale=Math.min(2,2200/img.width);tmp.width=Math.round(img.width*scale);tmp.height=Math.round(img.height*scale);const x=tmp.getContext('2d');x.drawImage(img,0,0,tmp.width,tmp.height);
+  const w=await Tesseract.createWorker('jpn+eng');const r=await w.recognize(tmp);await w.terminate();return r.data.text||'';
+}
+
+startBtn.onclick=async()=>{
+  if(!mealFile)return;
+  show('#home',false);show('#progressCard',true);show('#previewCard',true);show('#reviewCard',false);show('#summaryCard',false);show('#debugCard',false);
+  try{
+    setStep(1);setProgress(8,'写真を補正しています');const c=await fileToCanvas(mealFile);setStep(2);setProgress(20,'OCRモデルを準備しています');
+    setStep(3);const data=await runOCR(c);rawOCR=data.text||'';$('#rawText').textContent=rawOCR;setProgress(88,'読み取り結果を整理しています');
+    const lines=parseTSV(data.tsv);setStep(4);records=linesToRecords(lines);setProgress(94,'氏名・食事項目を照合しています');
+    if(menuFile){setProgress(96,'献立表も読み取っています');menuOCR=await ocrMenu(menuFile)}
+    setStep(5);setProgress(100,'完了しました');renderRecords();
+    setTimeout(()=>{show('#progressCard',false);show('#reviewCard',true);show('#debugCard',true)},300);
+  }catch(err){console.error(err);alert('読み取りに失敗しました。通信状態を確認し、Safariで再度お試しください。\n\n'+err.message);show('#progressCard',false);show('#home',true)}
+};
+
+function counts(key,values){const c=Object.fromEntries(values.map(v=>[v,0]));for(const r of records.filter(r=>r.active)){if(c[r[key]]!==undefined)c[r[key]]++}return c}
+$('#summaryBtn').onclick=()=>{
+  const active=records.filter(r=>r.active);const mc=counts('meal',MEALS),rc=counts('rice',RICE),salt=active.filter(r=>r.salt==='あり').length,all=active.filter(r=>r.allergy==='あり').length;
+  let html=`<p><b>集計人数：${active.length}名</b></p><div class="summaryGrid"><div class="summaryBox"><b>食事形態</b><table>${MEALS.map(x=>`<tr><td>${x}</td><td>${mc[x]}名</td></tr>`).join('')}</table></div><div class="summaryBox"><b>米飯</b><table>${RICE.map(x=>`<tr><td>${x}</td><td>${rc[x]}名</td></tr>`).join('')}</table></div></div><p>減塩：${salt}名　／　アレルギー：${all}名</p>`;
+  if(menuOCR)html+=`<details><summary>献立表の読み取り文字</summary><div class="mono">${esc(menuOCR)}</div></details>`;
+  html+=`<details><summary>個別一覧</summary><table><tr><th>氏名</th><th>食事</th><th>米飯</th></tr>${active.map(r=>`<tr><td>${esc(r.name)}</td><td>${esc(r.meal||'未判定')}</td><td>${esc(r.rice||'未判定')}</td></tr>`).join('')}</table></details>`;
+  $('#summary').innerHTML=html;show('#reviewCard',false);show('#summaryCard',true);show('#debugCard',false);window.scrollTo({top:0,behavior:'smooth'});
+};
+$('#backReview').onclick=()=>{show('#summaryCard',false);show('#reviewCard',true);show('#debugCard',true)};
+$('#retryBtn').onclick=()=>location.reload();
+$('#csvBtn').onclick=()=>{
+  const active=records.filter(r=>r.active);const rows=[['氏名','食事形態','米飯','減塩','アレルギー'],...active.map(r=>[r.name,r.meal,r.rice,r.salt,r.allergy])];
+  const csv='\ufeff'+rows.map(row=>row.map(v=>'"'+String(v??'').replace(/"/g,'""')+'"').join(',')).join('\r\n');const blob=new Blob([csv],{type:'text/csv;charset=utf-8'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='食事集計_'+new Date().toISOString().slice(0,10)+'.csv';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)
+};
+if('serviceWorker' in navigator)navigator.serviceWorker.register('./sw.js').catch(()=>{});
+</script>
+</body>
+</html>
